@@ -1,296 +1,682 @@
-const Sequelize = require("sequelize");
-const axios = require("axios");
-const Op = require("sequelize").Op;
+const Sequelize = require('sequelize');
+const axios = require('axios');
+const Op = require('sequelize').Op;
 const Model = Sequelize.Model;
-require("dotenv").config();
+require('dotenv').config();
 
 //requiring path and fs modules
-const path = require("path");
-const fs = require("fs");
+const path = require('path');
+const fs = require('fs');
 const fsPromises = fs.promises;
-const cliSelect = require("cli-select");
+const cliSelect = require('cli-select');
 
 const CONSOLE_COLORS = {
-  FgBlack: "\x1b[30m",
-  FgRed: "\x1b[31m",
-  FgGreen: "\x1b[32m",
-  FgYellow: "\x1b[33m",
-  FgBlue: "\x1b[34m",
-  FgMagenta: "\x1b[35m",
-  FgCyan: "\x1b[36m",
-  FgWhite: "\x1b[37m",
+	FgBlack: '\x1b[30m',
+	FgRed: '\x1b[31m',
+	FgGreen: '\x1b[32m',
+	FgYellow: '\x1b[33m',
+	FgBlue: '\x1b[34m',
+	FgMagenta: '\x1b[35m',
+	FgCyan: '\x1b[36m',
+	FgWhite: '\x1b[37m'
 };
-
+let CHECKING_ARRAY = [];
 async function start() {
-  try {
-    console.log("Program has started...");
-    const directoryPath = path.join(__dirname, "/data");
-    console.log(CONSOLE_COLORS.FgBlue, "Checking ", directoryPath);
-    const files = await fsPromises.readdir(directoryPath);
+	try {
+		console.log('Program has started...');
 
-    const csvFiles = [];
+		if (
+			!process.env.TMDB_API_KEY ||
+			!process.env.DB_USER ||
+			typeof process.env.DB_PASSWORD == 'undefined' ||
+			!process.env.DB_HOST ||
+			!process.env.DB_NAME ||
+			!process.env.DB_DIALECT
+		) {
+			console.log(CONSOLE_COLORS.FgRed, 'Check .env file, not everything is provided.');
+			console.log(CONSOLE_COLORS.FgWhite);
+			return;
+		}
+		const directoryPath = path.join(__dirname, '/data');
+		console.log(CONSOLE_COLORS.FgBlue, 'Checking ', directoryPath);
+		const files = await fsPromises.readdir(directoryPath);
 
-    files.forEach(function (file) {
-      // Do whatever you want to do with the file
-      const extension = path.extname(file);
+		const csvFiles = [];
 
-      if (extension == ".csv") {
-        csvFiles.push(file);
-      }
-    });
+		files.forEach(function(file) {
+			// Do whatever you want to do with the file
+			const extension = path.extname(file);
 
-    if (!csvFiles.length) {
-      console.log(CONSOLE_COLORS.FgRed, "No CSV files in data directory");
-      return;
-    }
+			if (extension == '.csv') {
+				csvFiles.push(file);
+			}
+		});
 
-    console.log(CONSOLE_COLORS.FgCyan, "Please select file:");
-    cliSelect({ values: csvFiles })
-      .then((response) => {
-        console.log(CONSOLE_COLORS.FgGreen, "Selected: " + response.value);
-        const selectedFile = response.value;
-        console.log(CONSOLE_COLORS.FgCyan, "Please select type of data:");
-        cliSelect({ values: ["Movies", "People"] })
-          .then((response) => {
-            console.log(CONSOLE_COLORS.FgGreen, "Selected: " + response.value);
+		if (!csvFiles.length) {
+			console.log(CONSOLE_COLORS.FgRed, 'No CSV files in data directory');
+			return;
+		}
 
-            const fileName = selectedFile.split(".").slice(0, -1).join(".");
-            if (response.value == "Movies") {
-              fetchDataForMovies(fileName);
-            } else {
-              fetchDataForPeople(fileName);
-            }
-          })
-          .catch(() => {
-            console.log("Cancelled");
-          });
-      })
-      .catch(() => {
-        console.log("Cancelled");
-      });
-  } catch (err) {
-    console.error("Error occured while reading directory!", err);
-  }
+		console.log(CONSOLE_COLORS.FgCyan, 'Please select file:');
+		cliSelect({ values: csvFiles })
+			.then((response) => {
+				console.log(CONSOLE_COLORS.FgGreen, 'Selected: ' + response.value);
+				const selectedFile = response.value;
+				console.log(CONSOLE_COLORS.FgCyan, 'Please select type of data:');
+				cliSelect({ values: [ 'Movies', 'People' ] })
+					.then((response) => {
+						console.log(CONSOLE_COLORS.FgGreen, 'Selected: ' + response.value);
+
+						const fileName = selectedFile.split('.').slice(0, -1).join('.');
+						if (response.value == 'Movies') {
+							fetchDataForMovies(fileName);
+						} else {
+							fetchDataForPeople(fileName);
+						}
+					})
+					.catch(() => {
+						console.log('Cancelled');
+					});
+			})
+			.catch(() => {
+				console.log('Cancelled');
+			});
+	} catch (err) {
+		console.error('Error occured while reading directory!', err);
+	}
 }
 
 start();
 
 const fetchDataForMovies = async (fileName) => {
-  const sequelize = new Sequelize({
-    dialect: "sqlite",
-    storage: `./${fileName}.db`,
-  });
-  class Movie extends Model {}
+	// const sequelize = new Sequelize({
+	// 	dialect: 'sqlite',
+	// 	storage: `./${fileName}.db`,
+	// 	logging: false,
+	// 	// transactionType: 'IMMEDIATE',
+	// 	retry: {
+	// 		max: 10
+	// 	}
+	// });
 
-  Movie.init(
-    {
-      tconst: {
-        type: Sequelize.STRING,
-        primaryKey: true,
-        unique: true,
-      },
-      genre: {
-        type: Sequelize.STRING,
-      },
-      original_language: {
-        type: Sequelize.STRING,
-      },
-      original_title: {
-        type: Sequelize.STRING,
-      },
-      overview: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      populariy: {
-        type: Sequelize.NUMBER,
-      },
-      status: {
-        type: Sequelize.STRING,
-      },
-      title: {
-        type: Sequelize.STRING,
-      },
-      vote_average: {
-        type: Sequelize.NUMBER,
-      },
-      vote_count: {
-        type: Sequelize.NUMBER,
-      },
-      tagline: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      budget: {
-        type: Sequelize.NUMBER,
-      },
-      adult: {
-        type: Sequelize.BOOLEAN,
-      },
-    },
-    {
-      sequelize,
-      modelName: "Movie",
-      tableName: "Movie",
-      timestamps: false,
-      freezeTableName: true,
-    }
-  );
+	// const sequelize = new Sequelize('movies', 'root', '', {
+	// 	host: process.env.DB_HOST,
+	// 	dialect: process.env.DB_DIALECT,
+	// 	logging: false
+	// });
 
-  console.log(CONSOLE_COLORS.FgCyan, "Should rebuild database?");
-  cliSelect({ values: ["Yes", "No"] })
-    .then(async (res) => {
-      if (res.value == "Yes") {
-        console.log("Checking database...");
-        await Movie.sync({ alter: true });
-      }
+	const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
+		host: process.env.DB_HOST,
+		dialect: process.env.DB_DIALECT,
+		logging: false
+	});
 
-      sequelize
-        .authenticate()
-        .then(async () => {
-          console.log("Connection has been established successfully.");
+	class Movie extends Model {}
+	class Genre extends Model {}
+	class SpokenLanguage extends Model {}
+	class ProductionCompany extends Model {}
+	class ProductionCountry extends Model {}
 
-          const data = fs.readFileSync(`./data/${fileName}.csv`, "UTF-8");
+	class MovieGenres extends Model {}
+	class MovieSpokenLanguages extends Model {}
+	class MovieProductionCompanies extends Model {}
+	class MovieProductionCountries extends Model {}
 
-          // split the contents by new line
-          const lines = data.split(/\r?\n/);
+	ProductionCountry.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			iso_3166_1: {
+				type: Sequelize.STRING
+			},
+			name: {
+				type: Sequelize.STRING
+			}
+		},
+		{
+			sequelize,
+			modelName: 'ProductionCountry',
+			tableName: 'production_country',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-          // print all lines
+	ProductionCompany.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			name: {
+				type: Sequelize.STRING
+			},
+			origin_country: {
+				type: Sequelize.STRING
+			}
+		},
+		{
+			sequelize,
+			modelName: 'ProductionCompany',
+			tableName: 'production_company',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-          if (res.value == "Yes") {
-            for (let i = 0; i <= lines.length - 1; i++) {
-              try {
-                const movie = await Movie.findOrCreate({
-                  where: { tconst: lines[i] },
-                });
-              } catch (err) {
-                console.log(CONSOLE_COLORS.FgRed, err);
-                break;
-              }
-              continue;
-            }
-          }
+	SpokenLanguage.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			iso_639_1: {
+				type: Sequelize.STRING
+			},
+			name: {
+				type: Sequelize.STRING
+			}
+		},
+		{
+			sequelize,
+			modelName: 'SpokenLanguage',
+			tableName: 'spoken_language',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-          if (res.value != "Yes") {
-            console.log(CONSOLE_COLORS.FgYellow, "Database build skipped");
-          }
+	Genre.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			tmdbId: {
+				type: Sequelize.INTEGER
+			},
+			name: Sequelize.STRING
+		},
+		{
+			sequelize,
+			modelName: 'Genre',
+			tableName: 'genre',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-          console.log(
-            CONSOLE_COLORS.FgWhite,
-            "Database is ready to fetch data"
-          );
-          console.log(
-            CONSOLE_COLORS.FgBlue,
-            "Starting the fetching process..."
-          );
+	Movie.init(
+		{
+			tconst: {
+				type: Sequelize.STRING,
+				primaryKey: true,
+				unique: true
+			},
+			original_language: {
+				type: Sequelize.STRING
+			},
+			original_title: {
+				type: Sequelize.STRING
+			},
+			overview: {
+				type: Sequelize.STRING,
+				allowNull: true
+			},
+			populariy: {
+				type: Sequelize.INTEGER
+			},
+			status: {
+				type: Sequelize.STRING
+			},
+			title: {
+				type: Sequelize.STRING
+			},
+			vote_average: {
+				type: Sequelize.INTEGER
+			},
+			vote_count: {
+				type: Sequelize.INTEGER
+			},
+			tagline: {
+				type: Sequelize.STRING,
+				allowNull: true
+			},
+			budget: {
+				type: Sequelize.INTEGER
+			},
+			adult: {
+				type: Sequelize.BOOLEAN
+			},
+			revenue: {
+				type: Sequelize.INTEGER
+			},
+			release_date: {
+				type: Sequelize.STRING
+			},
+			checked: {
+				type: Sequelize.BOOLEAN,
+				defaultValue: false
+			}
+		},
+		{
+			sequelize,
+			modelName: 'Movie',
+			tableName: 'movie',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-          let offset = 0;
-          setInterval(async function () {
-            loopThroughDatabaseMovies(offset, Movie);
-            offset++;
-            const amount = await Movie.count({
-              where: {
-                genre: { [Op.not]: null },
-              },
-            });
-            console.log(
-              CONSOLE_COLORS.FgMagenta,
-              `Fetched ${amount} movies. Page ${offset}`,
-              new Date()
-            );
-          }, 5000);
-        })
-        .catch((err) => {
-          console.error("Unable to connect to the database:", err);
-        });
-    })
-    .catch((err) => {
-      console.log("Cancelled");
-    });
+	MovieGenres.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			tconst: {
+				type: Sequelize.STRING
+			},
+			genre: {
+				type: Sequelize.INTEGER
+			}
+		},
+		{
+			sequelize,
+			modelName: 'MovieGenre',
+			tableName: 'movie_genre',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
 
-  // console.log("xd");
+	MovieSpokenLanguages.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			tconst: {
+				type: Sequelize.STRING
+			},
+			spoken_language: {
+				type: Sequelize.INTEGER
+			}
+		},
+		{
+			sequelize,
+			modelName: 'MovieSpokenLanguage',
+			tableName: 'movie_spoken_language',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
+
+	MovieProductionCompanies.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			tconst: {
+				type: Sequelize.STRING
+			},
+			production_company: {
+				type: Sequelize.INTEGER
+			}
+		},
+		{
+			sequelize,
+			modelName: 'MovieProductionCompany',
+			tableName: 'movie_production_company',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
+
+	MovieProductionCountries.init(
+		{
+			id: {
+				type: Sequelize.INTEGER,
+				primaryKey: true,
+				autoIncrement: true
+			},
+			tconst: {
+				type: Sequelize.STRING
+			},
+			production_country: {
+				type: Sequelize.INTEGER
+			}
+		},
+		{
+			sequelize,
+			modelName: 'MovieProductionCountry',
+			tableName: 'movie_production_country',
+			timestamps: false,
+			freezeTableName: true
+		}
+	);
+
+	Movie.hasMany(MovieGenres, { foreignKey: 'tconst', targetKey: 'tconst', unique: false });
+	Genre.hasMany(MovieGenres, { foreignKey: 'genre', targetKey: 'id', unique: false });
+
+	Movie.hasMany(MovieSpokenLanguages, { foreignKey: 'tconst', targetKey: 'tconst', unique: false });
+	SpokenLanguage.hasMany(MovieSpokenLanguages, { foreignKey: 'spoken_language', targetKey: 'id', unique: false });
+
+	Movie.hasMany(MovieProductionCompanies, { foreignKey: 'tconst', targetKey: 'tconst', unique: false });
+	ProductionCompany.hasMany(MovieProductionCompanies, {
+		foreignKey: 'production_company',
+		targetKey: 'id',
+		unique: false
+	});
+
+	Movie.hasMany(MovieProductionCountries, { foreignKey: 'tconst', targetKey: 'tconst', unique: false });
+	ProductionCountry.hasMany(MovieProductionCountries, {
+		foreignKey: 'production_country',
+		targetKey: 'id',
+		unique: false
+	});
+
+	// Genre.hasOne(MovieGenres)
+	// MovieGenres.belongsTo(Movie, { foreignKey: 'tconst', targetKey: 'tconst' });
+	// MovieGenres.belongsTo(Genre, { foreignKey: 'tconst', targetKey: 'tconst' });
+
+	console.log(CONSOLE_COLORS.FgCyan, 'Should create the database?');
+	cliSelect({ values: [ 'Yes', 'No' ] })
+		.then(async (res) => {
+			if (res.value == 'Yes') {
+				console.log('Database synchronization...');
+				await sequelize.sync();
+				// await Movie.sync({ alter: true });
+				// await Genre.sync({ alter: true });
+				// await MovieGenres.sync({ alter: true });
+			}
+
+			sequelize
+				.authenticate()
+				.then(async () => {
+					console.log('Connection has been established successfully.');
+
+					const data = fs.readFileSync(`./data/${fileName}.csv`, 'UTF-8');
+
+					// split the contents by new line
+					const lines = data.split(/\r?\n/);
+
+					// print all lines
+
+					if (res.value == 'Yes') {
+						console.log(CONSOLE_COLORS.FgYellow, 'Inserting initial records...');
+						let moviesArray = [];
+						for (let i = 0; i <= lines.length - 1; i++) {
+							try {
+								moviesArray.push({ tconst: lines[i].split('"').join('') });
+								// const movie = await Movie.findOrCreate({
+								//   where: { tconst: lines[i] },
+								// });
+							} catch (err) {
+								console.log(CONSOLE_COLORS.FgRed, err);
+								break;
+							}
+							continue;
+						}
+
+						await Movie.bulkCreate(moviesArray);
+					}
+
+					if (res.value != 'Yes') {
+						console.log(CONSOLE_COLORS.FgYellow, 'Database build skipped');
+					}
+
+					console.log(CONSOLE_COLORS.FgWhite, 'Database is ready to fetch data');
+					console.log(CONSOLE_COLORS.FgBlue, 'Starting the fetching process...');
+
+					let offset = 0;
+
+					setInterval(async function() {
+						loopThroughDatabaseMovies(
+							offset,
+							Movie,
+							MovieGenres,
+							Genre,
+							ProductionCompany,
+							MovieProductionCompanies,
+							ProductionCountry,
+							MovieProductionCountries,
+							SpokenLanguage,
+							MovieSpokenLanguages
+						);
+						offset++;
+						try {
+							const amount = await Movie.count({
+								where: {
+									original_title: { [Op.not]: null }
+								}
+							});
+							console.log(
+								CONSOLE_COLORS.FgGreen,
+								`Fetched ${amount} movies. Checking ${CHECKING_ARRAY.length} movies. ${new Date()}`,
+								new Date()
+							);
+						} catch (err) {
+							console.log(err);
+						}
+					}, 5000);
+				})
+				.catch((err) => {
+					console.error(CONSOLE_COLORS.FgRed, 'Unable to connect to the database:', err);
+				});
+		})
+		.catch((err) => {
+			console.log(err);
+			console.log('Cancelled');
+		});
+
+	// console.log("xd");
 };
 
-const loopThroughDatabaseMovies = (offset, model) => {
-  model
-    .findAll({
-      limit: 55,
-      offset: offset ? offset : 0,
-      where: {
-        genre: null,
-      },
-      order: [["tconst", "ASC"]],
-    })
-    .then(async (wholeDB) => {
-      for (let i = 0; i < wholeDB.length; i++) {
-        try {
-          if (!wholeDB[i].tconst) {
-            continue;
-          }
-          // console.log("Checking ", wholeDB[i].tconst);
+const loopThroughDatabaseMovies = async (
+	offset,
+	MovieModel,
+	MovieGenres,
+	Genre,
+	ProductionCompany,
+	MovieProductionCompanies,
+	ProductionCountry,
+	MovieProductionCountries,
+	SpokenLanguage,
+	MovieSpokenLanguages
+) => {
+	await MovieModel.findAll({
+		limit: 500,
+		offset: offset ? offset : 0,
+		where: {
+			original_title: null,
+			checked: false
+		},
+		// order: sequelize.random()
+		order: [ [ 'tconst', offset % 2 == 0 ? 'ASC' : 'DESC' ] ]
+	}).then(async (allMovies) => {
+		for (let i = 0; i < allMovies.length; i++) {
+			try {
+				await MovieModel.update(
+					{
+						checked: true
+					},
+					{
+						where: { tconst: allMovies[i].tconst }
+					}
+				);
 
-          const getImdbIdLink = `https://api.themoviedb.org/3/find/${wholeDB[i].tconst}`;
-          // console.log("LINK", getImdbIdLink);
-          const { data: imdbData } = await axios.get(getImdbIdLink, {
-            params: {
-              api_key: process.env.TMDB_API_KEY,
-              external_source: "imdb_id",
-            },
-          });
+				if (!allMovies[i].tconst) {
+					continue;
+				}
+				if (CHECKING_ARRAY.includes(allMovies[i].tconst)) {
+					continue;
+				}
 
-          try {
-            if (imdbData.movie_results.length > 0) {
-              const tmdbId = imdbData.movie_results[0].id;
-              // console.log("TMDBID", tmdbId);
-              const { data } = await axios.get(
-                `https://api.themoviedb.org/3/movie/${tmdbId}`,
-                {
-                  params: {
-                    api_key: process.env.TMDB_API_KEY,
-                  },
-                }
-              );
+				CHECKING_ARRAY.push(allMovies[i].tconst);
 
-              // console.log(
-              //   CONSOLE_COLORS.FgBlue,
-              //   "Movie fetched: ",
-              //   data.original_title
-              // );
-            } else {
-              const { data } = await axios.get(
-                `https://imdb-api.com/API/Title/k_s3htpv34/${wholeDB[i].tconst}`
-              );
+				// console.log("Checking ", wholeDB[i].tconst);
 
-              if (data.title) {
-                console.log(
-                  CONSOLE_COLORS.FgYellow,
-                  "Movie fetched: ",
-                  data.title
-                );
-              } else {
-                console.log(
-                  CONSOLE_COLORS.FgRed,
+				const getImdbIdLink = `https://api.themoviedb.org/3/find/${allMovies[i].tconst}`;
+				// console.log("LINK", getImdbIdLink);
+				const { data: imdbData } = await axios.get(getImdbIdLink, {
+					params: {
+						api_key: process.env.TMDB_API_KEY,
+						external_source: 'imdb_id'
+					}
+				});
 
-                  wholeDB[i].tconst
-                );
-                console.log(CONSOLE_COLORS.FgWhite);
-              }
-            }
-          } catch (err) {
-            console.log(CONSOLE_COLORS.FgRed, err);
-          }
+				try {
+					if (imdbData.movie_results.length > 0) {
+						const tmdbId = imdbData.movie_results[0].id;
+						const movieToUpdate = await MovieModel.findOne({ where: { tconst: allMovies[i].tconst } });
 
-          // wholeDB[i].update({
-          //   adult: data.adult,
-          //   budget: data.budget,
-          //   original_language: data.original_language
-          // })
-        } catch (err) {
-          console.log(CONSOLE_COLORS.FgRed, err);
-          break;
-        }
-      }
-    });
+						const { data } = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbId}`, {
+							params: {
+								api_key: process.env.TMDB_API_KEY
+							}
+						});
+
+						movieToUpdate.original_language = data.original_language;
+						movieToUpdate.original_title = data.original_title;
+						movieToUpdate.overview = data.overview;
+						movieToUpdate.populariy = data.popularity;
+						movieToUpdate.status = data.status;
+						movieToUpdate.title = data.title;
+						movieToUpdate.vote_average = data.vote_average;
+						movieToUpdate.vote_count = data.vote_count;
+						movieToUpdate.tagline = data.tagline;
+						movieToUpdate.budget = data.budget;
+						movieToUpdate.adult = data.adult;
+						movieToUpdate.revenue = data.revenue;
+						movieToUpdate.release_date = data.release_date;
+
+						await movieToUpdate.save();
+
+						for (const movieGenre of data.genres) {
+							await Genre.findOrCreate({
+								where: {
+									name: movieGenre.name,
+									tmdbId: movieGenre.id
+								}
+							});
+
+							const genre = await Genre.findOne({
+								where: {
+									name: movieGenre.name
+								}
+							});
+
+							await MovieGenres.findOrCreate({
+								where: {
+									genre: genre.id,
+									tconst: movieToUpdate.tconst
+								}
+							});
+						}
+
+						for (const productionCountry of data.production_countries) {
+							await ProductionCountry.findOrCreate({
+								where: {
+									iso_3166_1: productionCountry.iso_3166_1,
+									name: productionCountry.name
+								}
+							});
+
+							const myProductionCountry = await ProductionCountry.findOne({
+								where: {
+									iso_3166_1: productionCountry.iso_3166_1,
+									name: productionCountry.name
+								}
+							});
+
+							await MovieProductionCountries.findOrCreate({
+								where: {
+									production_country: myProductionCountry.id,
+									tconst: movieToUpdate.tconst
+								}
+							});
+						}
+
+						for (const productionCompany of data.production_companies) {
+							await ProductionCompany.findOrCreate({
+								where: {
+									origin_country: productionCompany.origin_country,
+									name: productionCompany.name
+								}
+							});
+
+							const myProductionCompany = await ProductionCompany.findOne({
+								where: {
+									origin_country: productionCompany.origin_country,
+									name: productionCompany.name
+								}
+							});
+
+							await MovieProductionCompanies.findOrCreate({
+								where: {
+									production_company: myProductionCompany.id,
+									tconst: movieToUpdate.tconst
+								}
+							});
+						}
+
+						for (const spokenLanguage of data.spoken_languages) {
+							await SpokenLanguage.findOrCreate({
+								where: {
+									iso_639_1: spokenLanguage.iso_639_1,
+									name: spokenLanguage.name
+								}
+							});
+
+							const mySpokenLanguage = await SpokenLanguage.findOne({
+								where: {
+									iso_639_1: spokenLanguage.iso_639_1,
+									name: spokenLanguage.name
+								}
+							});
+
+							await MovieSpokenLanguages.findOrCreate({
+								where: {
+									spoken_language: mySpokenLanguage.id,
+									tconst: movieToUpdate.tconst
+								}
+							});
+						}
+
+						const index = CHECKING_ARRAY.indexOf(allMovies[i].tconst);
+						if (index > -1) {
+							CHECKING_ARRAY.splice(index, 1);
+						}
+					} else {
+						// console.log(CONSOLE_COLORS.FgRed, `Missing: ${allMovies[i].tconst}`);
+					}
+				} catch (err) {
+					console.log(CONSOLE_COLORS.FgRed, err);
+					break;
+				}
+
+				// wholeDB[i].update({
+				//   adult: data.adult,
+				//   budget: data.budget,
+				//   original_language: data.original_language
+				// })
+			} catch (err) {
+				console.log(CONSOLE_COLORS.FgRed, err);
+				break;
+			}
+		}
+	});
 };
 
 // //joining path of directory
